@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vemo Editor</title>
+    <style>
+        /* 1. Base Reset & Fonts */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: rgb(18, 18, 18); /* Updated to match editor */
+            color: #abb2bf;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 2. Top Bar (Tab System) */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: rgb(20, 20, 20); /* REQUESTED: Tab system background */
+            height: 40px;
+            border-bottom: 1px solid #1a1a1a;
+            user-select: none;
+        }
+
+        /* Tab Container */
+        .tabs-container {
+            display: flex;
+            height: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+            flex-grow: 1;
+        }
+        
+        .tabs-container::-webkit-scrollbar {
+            display: none; 
+        }
+
+        /* Individual Tab */
+        .tab {
+            display: flex;
+            align-items: center;
+            justify-content: space-between; 
+            padding: 0 12px 0 16px;
+            height: 100%;
+            background-color: rgb(20, 20, 20); /* Matches top bar initially */
+            border-right: 1px solid #1a1a1a;
+            color: #5c6370;
+            font-size: 13px;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            animation: tabFadeIn 0.3s ease-out forwards;
+            min-width: 140px;
+            max-width: 220px;
+        }
+
+        .tab:hover {
+            background-color: #2a2a2a;
+            color: #abb2bf;
+        }
+
+        /* Active Tab matches the Editor Background (18, 18, 18) */
+        .tab.active {
+            background-color: rgb(18, 18, 18); 
+            color: #fff;
+        }
+
+        /* Glowing top line for active tab */
+        .tab.active::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: #528bff;
+            box-shadow: 0 0 8px #528bff;
+            animation: lineGrow 0.3s ease-out forwards;
+        }
+
+        /* File Name Text */
+        .tab-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-grow: 1;
+        }
+
+        /* Tab Close Button */
+        .tab-close {
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            font-size: 16px;
+            line-height: 1;
+            opacity: 0;
+            transition: all 0.2s;
+            color: #5c6370;
+            flex-shrink: 0;
+        }
+
+        .tab:hover .tab-close, .tab.active .tab-close {
+            opacity: 1;
+        }
+
+        .tab-close:hover {
+            background-color: #333;
+            color: #fff;
+        }
+
+        /* Hide close button if it's the only tab open */
+        .tab.locked .tab-close {
+            opacity: 0 !important;
+            pointer-events: none;
+        }
+
+        /* The New "+" Add Tab Button */
+        .add-tab-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 100%;
+            color: #5c6370;
+            font-size: 20px;
+            font-weight: 300;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-left: 1px solid transparent;
+        }
+
+        .add-tab-btn:hover {
+            color: #fff;
+            background-color: #2a2a2a;
+            border-left: 1px solid #333;
+        }
+
+        .add-tab-btn:active {
+            transform: scale(0.9);
+        }
+
+        /* 3. The Monaco Container */
+        #editor-container {
+            width: 100%;
+            flex-grow: 1;
+            position: relative;
+        }
+
+        /* --- Animations --- */
+        @keyframes tabFadeIn {
+            0% { opacity: 0; transform: translateY(-10px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes lineGrow {
+            0% { transform: scaleX(0); }
+            100% { transform: scaleX(1); }
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: rgb(18, 18, 18); }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background: #444; }
+    </style>
+</head>
+<body>
+
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <div class="tabs-container" id="tabs-container">
+            <!-- Tabs will be injected here via JS -->
+        </div>
+        <div class="add-tab-btn" id="add-tab-btn" title="New File">+</div>
+    </div>
+
+    <!-- Editor Container -->
+    <div id="editor-container"></div>
+
+    <!-- Monaco Editor CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+
+    <script>
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
+
+        window.MonacoEnvironment = {
+            getWorkerUrl: function (workerId, label) {
+                return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
+                    self.MonacoEnvironment = {
+                        baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/'
+                    };
+                    importScripts('https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/base/worker/workerMain.js');
+                `)}`;
+            }
+        };
+
+        require(["vs/editor/editor.main"], function () {
+            
+            monaco.editor.defineTheme('vemo-dark', {
+                base: 'vs-dark',
+                inherit: true,
+                rules: [
+                    { token: 'comment', foreground: '5c6370', fontStyle: 'italic' },
+                    { token: 'keyword', foreground: 'c678dd' },
+                    { token: 'string', foreground: '98c379' },
+                    { token: 'number', foreground: 'd19a66' },
+                    { token: 'identifier', foreground: 'abb2bf' },
+                ],
+                colors: {
+                    'editor.background': '#121212', /* REQUESTED: 18, 18, 18 */
+                    'editor.foreground': '#abb2bf',
+                    'editorLineNumber.foreground': '#4b5263',
+                    'editorLineNumber.activeForeground': '#abb2bf',
+                    'editor.selectionBackground': '#3e4451',
+                    'editor.lineHighlightBackground': '#1c1c1c', /* Slightly lighter for line highlight */
+                    'editorCursor.foreground': '#528bff',
+                    'editorIndentGuide.background': '#2c313a',
+                    'editorIndentGuide.activeBackground': '#4b5263',
+                    'minimap.background': '#121212', /* Minimap matches editor */
+                }
+            });
+
+            const editor = monaco.editor.create(document.getElementById('editor-container'), {
+                theme: 'vemo-dark',
+                automaticLayout: true, 
+                minimap: { enabled: true, side: 'right', renderCharacters: false, maxColumn: 80 },
+                fontSize: 15,
+                fontFamily: "'Fira Code', 'Consolas', monospace", 
+                fontLigatures: true,
+                lineHeight: 26,
+                padding: { top: 24, bottom: 24, left: 16 },
+                scrollBeyondLastLine: false,
+                smoothScrolling: true, 
+                cursorBlinking: "smooth",
+                cursorSmoothCaretAnimation: "on", 
+                renderLineHighlight: "all",
+                roundedSelection: true,
+                scrollbar: { vertical: 'visible', horizontal: 'visible', useShadows: false, verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }
+            });
+
+            // --- TAB SYSTEM LOGIC ---
+            const tabsContainer = document.getElementById('tabs-container');
+            const openTabs = new Map(); 
+            let activeTabId = null;
+            let untitledCounter = 1; 
+
+            function createTab(id, fileName, language, initialCode = '') {
+                if (openTabs.has(id)) {
+                    switchTab(id);
+                    return;
+                }
+
+                const model = monaco.editor.createModel(initialCode, language);
+
+                const tabEl = document.createElement('div');
+                tabEl.className = 'tab';
+                tabEl.id = `tab-${id}`;
+                
+                tabEl.innerHTML = `
+                    <span class="tab-name">${fileName}</span>
+                    <div class="tab-close">×</div>
+                `;
+
+                tabEl.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('tab-close')) {
+                        closeTab(id);
+                    } else {
+                        switchTab(id);
+                    }
+                });
+
+                tabsContainer.appendChild(tabEl);
+
+                openTabs.set(id, {
+                    model: model,
+                    viewState: null,
+                    element: tabEl,
+                    language: language
+                });
+
+                switchTab(id);
+                updateTabLockState();
+            }
+
+            function switchTab(id) {
+                if (activeTabId === id) return;
+
+                if (activeTabId && openTabs.has(activeTabId)) {
+                    const currentTab = openTabs.get(activeTabId);
+                    currentTab.viewState = editor.saveViewState();
+                    currentTab.element.classList.remove('active');
+                }
+
+                activeTabId = id;
+                const newTab = openTabs.get(id);
+                newTab.element.classList.add('active');
+
+                editor.setModel(newTab.model);
+                
+                if (newTab.viewState) {
+                    editor.restoreViewState(newTab.viewState);
+                }
+                
+                editor.focus();
+            }
+
+            function closeTab(id) {
+                // Prevent closing if it's the only tab left
+                if (openTabs.size <= 1) {
+                    return; 
+                }
+
+                if (!openTabs.has(id)) return;
+
+                const tabToClose = openTabs.get(id);
+                tabToClose.element.remove();
+                tabToClose.model.dispose();
+                openTabs.delete(id);
+
+                if (activeTabId === id) {
+                    const remainingTabs = Array.from(openTabs.keys());
+                    if (remainingTabs.length > 0) {
+                        switchTab(remainingTabs[remainingTabs.length - 1]);
+                    } else {
+                        editor.setModel(null);
+                        activeTabId = null;
+                    }
+                }
+                
+                updateTabLockState();
+            }
+
+            function updateTabLockState() {
+                if (openTabs.size === 1) {
+                    const lastTab = openTabs.values().next().value;
+                    lastTab.element.classList.add('locked');
+                } else {
+                    openTabs.forEach(tab => {
+                        tab.element.classList.remove('locked');
+                    });
+                }
+            }
+
+            // --- INITIALIZE ---
+            
+            createTab('file-1', 'main.lua', 'lua', `-- Welcome to Vemo --\nprint("Hello, World!")`);
+
+            document.getElementById('add-tab-btn').addEventListener('click', () => {
+                const newId = `untitled-${untitledCounter}`;
+                const newFileName = `untitled-${untitledCounter}.lua`;
+                untitledCounter++;
+                
+                createTab(newId, newFileName, 'lua', '');
+            });
+
+        });
+    </script>
+</body>
+</html>
